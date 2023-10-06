@@ -5,12 +5,13 @@ import os
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 from torchvision.datasets import CIFAR10
+import torchvision
 import seaborn as sn
-
+from PIL import Image
+import cv2
 
 
 def get_path(relpath):
-  print(os.path.dirname(__file__))
   return os.path.join("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/", BASE_DIR, DATA_DIR, relpath)
 
 
@@ -74,50 +75,7 @@ class ConvolutionalModel(nn.Module):
       x = self.convlayers(x)
       x = torch.flatten(x, 1)
       return self.linearlayers(x)
-
-BASE_DIR = '/datasets'
-DATA_DIR = '/cifar10'
-CATEGORIES = ['airplane','automobile','bird','cat','deer',
-               'dog','frog','horse','ship','truck']
-
-cifar10_train = CIFAR10(get_path("train"), train=True, download=True)
-cifar10_test = CIFAR10(get_path("test"), train=False, download=True)
-prep_transform = T.Compose([
-                    T.ToTensor(),
-                    T.Normalize(
-                        (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
-                    )
-                  ])
-
-# Applying a transform
-tensor_train = CIFAR10(get_path("train"), train=True, download=False,
-                         transform=prep_transform)
-tensor_test = CIFAR10(get_path("test"), train=False, download=False,
-                         transform=prep_transform)
-
-imgs = torch.stack([img_t for img_t, _ in tensor_train], dim=3)
-imgs.shape
-     
-imgs.view(3, -1).mean(dim=1)
-     
-imgs.view(3, -1).std(dim=1)
-
-batch_size = 64
-train_loader = DataLoader(tensor_train, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(tensor_test, batch_size=batch_size, shuffle=False)
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Rodando na {device}")
-
-model = MLPClassifier().to(device)
-
-if os.path.exists("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/model.pt"):
-  model.load_state_dict(torch.load("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/model.pt"))
-  print("Modelo carregado")
-
-
-loss_func = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-
+  
 def train(model, dataloader, loss_func, optimizer):
   model.train()
   cumloss = 0.0
@@ -161,21 +119,6 @@ def plot_losses(losses):
   ax.set_ylabel("Loss", fontsize="16")
   ax.set_title("Loss vs iterations", fontsize="16")
   plt.show()
-
-epochs = 2
-train_losses = []
-test_losses = []
-for t in range(epochs):
-  train_loss = train(model, train_loader, loss_func, optimizer)
-  train_losses.append(train_loss)
-  if t % 10 == 0:
-    print(f"Epoch: {t}; Train Loss: {train_loss}")
-  
-  test_loss = validate(model, test_loader, loss_func)
-  test_losses.append(test_loss)
-
-losses = {"Train loss": train_losses, "Test loss": test_losses}
-plot_losses(losses)
 
 def make_confusion_matrix(model, loader, n_classes):
   confusion_matrix = torch.zeros(n_classes, n_classes, dtype=torch.int64)
@@ -240,6 +183,64 @@ def test(model, dataloader, classes):
                                                     accuracy))
   print("Global acccuracy is {:.1f}".format(100 * total_correct/total_prediction))
 
+BASE_DIR = '/datasets'
+DATA_DIR = '/cifar10'
+CATEGORIES = ['airplane','automobile','bird','cat','deer','dog','frog','horse','ship','truck']
+
+prep_transform = T.Compose([
+                    T.ToTensor(),
+                    T.Normalize(
+                        (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
+                    )
+                  ])
+
+# Downloading and Applying a transform
+tensor_train = CIFAR10(get_path("train"), train=True, download=False,
+                         transform=prep_transform)
+tensor_test = CIFAR10(get_path("test"), train=False, download=False,
+                         transform=prep_transform)
+
+imgs = torch.stack([img_t for img_t, _ in tensor_train], dim=3)
+imgs.shape
+     
+imgs.view(3, -1).mean(dim=1)
+     
+imgs.view(3, -1).std(dim=1)
+
+batch_size = 64
+train_loader = DataLoader(tensor_train, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(tensor_test, batch_size=batch_size, shuffle=False)
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Rodando na {device}")
+
+
+# Linear model
+model = MLPClassifier().to(device)
+if os.path.exists("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/model.pt"):
+  model.load_state_dict(torch.load("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/model.pt"))
+  print("Modelo carregado")
+
+
+loss_func = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+epochs = 2
+train_losses = []
+test_losses = []
+for t in range(epochs):
+  train_loss = train(model, train_loader, loss_func, optimizer)
+  train_losses.append(train_loss)
+  if t % 10 == 0:
+    print(f"Epoch: {t}; Train Loss: {train_loss}")
+  
+  test_loss = validate(model, test_loader, loss_func)
+  test_losses.append(test_loss)
+
+losses = {"Train loss": train_losses, "Test loss": test_losses}
+plot_losses(losses)
+
+
+
 confusion_matrix = evaluate_accuracy(model, test_loader, CATEGORIES)
      
 
@@ -250,6 +251,98 @@ sn.heatmap(confusion_matrix.tolist(),
 plt.show()
      
 
+# convolutional model
+model = torchvision.models.detection.ssd300_vgg16(pretrained=True)
+convmodel = ConvolutionalModel().to(device)
+if os.path.exists("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/convmodel.pt"):
+  convmodel.load_state_dict(torch.load("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/convmodel.pt"))
+  print("Modelo convolucional carregado")
 
+
+loss_func2 = nn.CrossEntropyLoss()
+optimizer2 = torch.optim.SGD(convmodel.parameters(), lr=0.001)
+     
+
+epochs = 1
+conv_train_losses = []
+conv_test_losses = []
+for t in range(epochs):
+  train_loss = train(convmodel, train_loader, loss_func2, optimizer2)
+  conv_train_losses.append(train_loss)
+  if t % 10 == 0:
+    print(f"Epoch: {t}; Train Loss: {train_loss}")
+  test_loss = validate(convmodel, test_loader, loss_func2)
+  conv_test_losses.append(test_loss)  
+
+conv_losses = {"Train Loss": conv_train_losses, "Test Loss": conv_test_losses}
+plot_losses(conv_losses)
+
+confusion_matrix = evaluate_accuracy(convmodel, test_loader, CATEGORIES)
+     
+
+plt.figure(figsize=(12, 12))
+sn.set(font_scale=1.4)
+sn.heatmap(confusion_matrix.tolist(), 
+           annot=True, annot_kws={"size": 16}, fmt='d')
+plt.show()
+
+cap = cv2.VideoCapture(0)
+
+prep_transforms = T.Compose(
+    [T.Resize((32, 32)),
+     T.ToTensor(),
+     T.Normalize( (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616) )
+     ]
+)
+
+convmodel.eval()
+
+while True:
+    ret, frame = cap.read()  # Captura um quadro da câmera
+
+    # Transforme o quadro em uma imagem PyTorch
+    img_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    img_tensor = prep_transforms(img_pil)
+
+    # Realize a inferência no modelo
+    with torch.no_grad():
+        batch = img_tensor.unsqueeze(0).to(device)
+        output = convmodel(batch)  # Adicione uma dimensão para o lote (batch)
+
+    # Processar a saída do modelo aqui (dependendo do seu modelo)
+    logits = torch.nn.functional.softmax(output, dim=1) * 100
+    x, y = output
+    prob_dict = {}
+    for i, classname in enumerate(CATEGORIES):
+      prob = logits[0][i].item()
+      print(f"{classname} score: {prob:.2f}")
+      prob_dict[classname] = [prob]
+
+    # Exibir a imagem de saída e aguardar a tecla 'q' para sair
+    cv2.imshow('Capturando Tela', frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+img = Image.open("c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/localImages/carrof1.png")
+
+img_tensor = prep_transforms(img)
+
+""" 
+plt.imshow(img_tensor.permute(1,2, 0))
+plt.show() """
+
+batch = img_tensor.unsqueeze(0).to(device)
+     
+
+
+output = convmodel(batch)
+
+logits = torch.nn.functional.softmax(output, dim=1) * 100
+prob_dict = {}
+for i, classname in enumerate(CATEGORIES):
+  prob = logits[0][i].item()
+  print(f"{classname} score: {prob:.2f}")
+  prob_dict[classname] = [prob]
 
 torch.save(model.state_dict(), "c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/model.pt")
+torch.save(convmodel.state_dict(), "c:/Users/guilh/napp/dontStarve/DontStarveGamerAi/datasets/cifar10/saves/convmodel.pt")
