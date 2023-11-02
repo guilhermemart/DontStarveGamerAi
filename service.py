@@ -44,7 +44,8 @@ def transform(image : cv2.typing.MatLike):
     return image
 
 # Definir uma função para desenhar as caixas delimitadoras na imagem
-def untransform_and_draw_boxes(image: torch.Tensor, boxes : tuple, labels : tuple, scores : tuple, threshold=0.5):
+def untransform_and_draw_boxes(tensor_image: torch.Tensor, boxes : tuple, labels : tuple, scores : tuple, threshold=0.5):
+    image = tensor_image.clone()
     # Converter a imagem em um array numpy
     image = image.numpy()
     # Transpor a imagem para o formato HxWxC
@@ -52,20 +53,22 @@ def untransform_and_draw_boxes(image: torch.Tensor, boxes : tuple, labels : tupl
     # Desnormalizar a imagem
     image = image * 255.0
     # Iterar sobre as caixas, os rótulos e os escores
+    persons = []
     for box, label, score in zip(boxes, labels, scores):
         # Verificar se o escore é maior que o limiar
         if score > threshold:
             # Extrair as coordenadas da caixa
             x1, y1, x2, y2 = box
-            # Se for person salvar como mini imagem
+            # Se for person separar a miniimagem
             if classes[label] == 'person':
                 Path(__file__).parent.joinpath("data").joinpath("person").mkdir(parents=True, exist_ok=True)
                 cv2.imwrite(f'{Path(__file__).parent.joinpath("data").joinpath("person").joinpath(f"pessoa{int(time.time())+rand(1,100,1)}.jpeg")}', image[y1:y2, x1:x2])
+                persons.append(box)
             # Desenhar a caixa na imagem
             cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
             # Escrever o rótulo e o escore na imagem
             cv2.putText(image, f'{classes[label]}: {score:.2f}', (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-    return image
+    return image, persons
 
 if __name__ == '__main__':
 
@@ -75,8 +78,24 @@ if __name__ == '__main__':
     else: 
         model = torchvision.models.detection.ssd300_vgg16(pretrained=True,weights='COCO_V1')
 
+    # Carregar o modelo SSD personalizado
+    if Path(__file__).parent.joinpath('model_local.pt').exists():
+        model_local = torch.load('model_local.pt')
+    else: 
+        model_local = torchvision.models.detection.ssd300_vgg16(pretrained=False,num_classes=2)
+
+    # Treinar o model COCO para imagens locais
     model.training = True
     ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person//pessoa.jpeg')
+    trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+    ima = [trans(ima_)]
+    target = [{"boxes":torch.tensor(data=[0,0,600,600]), "labels":1}]
+    model.forward(images = ima, targets = target)
+    model.eval()
+
+    # Treinar o model local para imagens heads
+    model.training = True
+    ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//head//baixados.jpg')
     trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
     ima = [trans(ima_)]
     target = [{"boxes":torch.tensor(data=[0,0,600,600]), "labels":1}]
