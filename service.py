@@ -128,3 +128,4 @@ if __name__ == '__main__':
     cv2.waitKey(0)
     cv2.destroyAllWindows()
     torch.save(model, 'model.pt')
+    torch.save(model_local, 'model_local.pt')
