@@ -7,6 +7,7 @@ from PIL import ImageGrab
 import time
 from random import randrange as rand
 from pathlib import Path
+import os
 
 # Definir as classes do modelo "COCO"
 classes = ['background', 'person', 'bicycle', 'car', 'motorcycle',
@@ -85,22 +86,26 @@ if __name__ == '__main__':
         model_local = torchvision.models.detection.ssd300_vgg16(pretrained=False,num_classes=2)
 
     # Treinar o model COCO para imagens locais
+    files = os.listdir('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person')
     model.training = True
-    ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person//pessoa.jpeg')
-    trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-    ima = [trans(ima_)]
-    target = [{"boxes":torch.tensor(data=[0,0,600,600]), "labels":1}]
-    model.forward(images = ima, targets = target)
+    for file in files:
+        ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person//'+ file)
+        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+        ima = [trans(ima_)]
+        target = [{"boxes":torch.tensor(data=[[0,0,600,600]]), "labels":torch.tensor(data=[1])}]
+        model.forward(images = ima, targets = target)
     model.eval()
 
     # Treinar o model local para imagens heads
-    model.training = True
-    ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//head//baixados.jpg')
-    trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-    ima = [trans(ima_)]
-    target = [{"boxes":torch.tensor(data=[0,0,600,600]), "labels":1}]
-    model.forward(images = ima, targets = target)
-    model.eval()
+    files = os.listdir('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//head')
+    model_local.training = True
+    for file in files:
+        ima_= cv2.imread('C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//head//'+ file)
+        trans = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+        ima = [trans(ima_)]
+        target = [{"boxes":torch.tensor(data=[[0,0,600,600]]), "labels":torch.tensor(data=[1])}]
+        model_local.forward(images = ima, targets = target)
+    model_local.eval()
     
     # Capturar um print do monitor
     printscreen = ImageGrab.grab()
@@ -120,7 +125,7 @@ if __name__ == '__main__':
     scores = output[0]['scores'].numpy()
 
     # Desenhar as caixas delimitadoras na imagem original
-    image_with_boxes = untransform_and_draw_boxes(image_tensor[0], boxes, labels, scores)
+    image_with_boxes, x = untransform_and_draw_boxes(image_tensor[0], boxes, labels, scores)
 
     # salvar a imagem com as caixas delimitadoras
     cv2.imshow('Image with boxes', image_with_boxes)
