@@ -12,5 +12,5 @@ def test_untransform_and_draw_boxes():
     boxes = ((0, 0, 100, 100),)
     labels = (1,)
     scores = (0.9,)
-    image = service.untransform_and_draw_boxes(image[0], boxes, labels, scores)
-    assert image.shape == (600, 600, 3)
+    image, x = service.untransform_and_draw_boxes(image[0], boxes, labels, scores)
+    assert image.shape == (600, 600, 3) and isinstance(x, list)
