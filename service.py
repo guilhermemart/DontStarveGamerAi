@@ -11,7 +11,7 @@ import os
 import albumentations as A
 import random
 
-LR = 0.000015
+LR = 0.00001
 SAMPLES_QUANTITY = 500
 
 # Definir as classes do modelo "COCO"
@@ -56,6 +56,14 @@ def transform(image : cv2.typing.MatLike):
     
     return image
 
+def torch_transform(image):
+    # Transforms
+    resize = torchvision.transforms.Resize((600, 600), antialias=False)
+    to_tensor = torchvision.transforms.ToTensor()
+    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    compose_transform = torchvision.transforms.Compose([to_tensor, resize, normalize])
+    return compose_transform(image)
+
 # Definir uma função para desenhar as caixas delimitadoras na imagem
 def untransform_and_draw_boxes(tensor_image: torch.Tensor, boxes : tuple, labels : tuple, scores : tuple, threshold=0.5, save_as = "person"):
     image = tensor_image.clone().detach()
@@ -90,6 +98,77 @@ def untransform_and_draw_boxes(tensor_image: torch.Tensor, boxes : tuple, labels
             image = cv2.putText(image, f'{classes[label]}: {score:.2f}', (x1, y1 + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     return image, are_there_persons
 
+def train_epoch(path_to_annotations, path_to_images, model, optimizer, device, augmentator):
+    ima = []
+    target = []
+    bbox = []
+    with open(path_to_annotations, "r" ) as txt_file:
+        bbox = txt_file.readlines()
+    txt_file.close()
+    bbox = {x.split()[0]: x.split()[1:]  for x in bbox}
+    bbox = {k: [int(v[0]), int(v[1]), int(v[0])+int(v[2]), int(v[1])+int(v[3])] for k, v in bbox.items() if k != "image_id" and k != "202599"} 
+    samples = os.listdir(path_to_images)
+    random.shuffle(samples)
+    samples = samples[0:SAMPLES_QUANTITY]
+    loss = 0
+    for j, file in enumerate(samples):
+        if j>0 and j%100 == 0:
+            print(f"Progress: {j} / {len(samples)} Next sample: {file} Bbox: {bbox.get(file, [0,0,0,0])} Loss: {loss}")
+        
+        ima_= cv2.imread(path_to_images + '//' + file)
+        original_dimension = ima_.shape 
+        
+        x1, y1, x2, y2 = int(original_dimension[0]*0.05), int(original_dimension[1]*0.05), int(original_dimension[0]*0.95), int(original_dimension[1]*0.95)
+
+        x1, y1, x2, y2 = bbox.get(file, [x1, y1, x2, y2])
+
+        """ try:
+            augmented_image = augmentator(image=ima_, bboxes=[[x1,y1,x2,y2]], labels=[1])
+            x1, y1, x2, y2 = augmented_image["bboxes"][0]
+        except: """
+        augmented_image = {"image":ima_}
+
+        new_image = torch_transform(augmented_image["image"])
+        new_dimension = new_image.shape
+
+        # bbox validation
+        x1, y1, x2, y2 = int(new_dimension[1]*x1/original_dimension[0]), int(new_dimension[2]*y1/original_dimension[1]), int(new_dimension[1]*x2/original_dimension[0]), int(new_dimension[2]*y2/original_dimension[1])
+        if x2<=x1 or y2<=y1:
+            print(f"Invalid box: {file}")
+            continue
+
+        # add to batch and send to gpu
+        ima.append(new_image.to(device))
+        
+        target.append({"boxes":torch.tensor(data=[[x1,y1,x2,y2]]).to(device), 
+                        "labels":torch.tensor(data=[1]).to(device)})
+        # max_batch_size = 8
+        if len(ima) == 8:
+            optimizer.zero_grad()
+            output = model(images = ima, targets = target) 
+            losses = output.get('bbox_regression', None)
+            
+            if losses is not None:
+                loss = sum(loss for loss in output.values())
+                if not torch.isnan(loss).any():
+                    loss.backward()
+                    optimizer.step()
+            ima = []
+            target = []
+    # residual
+    if len(ima) > 0:
+        optimizer.zero_grad()
+        output = model(images = ima, targets = target) 
+        losses = output.get('bbox_regression', None)
+        if losses is not None:
+            loss = sum(loss for loss in output.values())
+            if not torch.isnan(loss).any():
+                loss.backward()
+                optimizer.step()
+        ima = []
+        target = []
+    print(f"Progress: {j+1} / {len(samples)} Loss: {loss}")
+
 def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person', epochs = 1):
     start_time = time.time()
     old_device = model.parameters().__next__().device
@@ -111,89 +190,17 @@ def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gm
                                         label_fields=['labels'])
         )
 
-    # Transforms
-    resize = torchvision.transforms.Resize((600, 600), antialias=False)
-    to_tensor = torchvision.transforms.ToTensor()
-    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    trans = torchvision.transforms.Compose([to_tensor, resize, normalize])
-    
     model.train()
     
     # Define the optimizer
     optimizer = torch.optim.SGD(model.parameters(), lr=LR, momentum=0.9, nesterov=True)
     print(f"start training Learning Rate: {LR}")
 
+    path_to_annotations = Path(__file__).parent.joinpath('data').joinpath("annotations").joinpath("list_bbox_celeba.txt")
     for j in range(epochs):
         print(f"Epoch: {j+1} / {epochs}")
-        ima = []
-        target = []
-        bbox = []
-        with open(Path(__file__).parent.joinpath('data').joinpath("annotations").joinpath("list_bbox_celeba.txt"), "r" ) as txt_file:
-            bbox = txt_file.readlines()
-        txt_file.close()
-        bbox = {x.split()[0]: x.split()[1:]  for x in bbox}
-        bbox = {k: [int(v[0]), int(v[1]), int(v[0])+int(v[2]), int(v[1])+int(v[3])] for k, v in bbox.items() if k != "image_id" and k != "202599"} 
-        samples = os.listdir(file_dir)
-        random.shuffle(samples)
-        samples = samples[0:SAMPLES_QUANTITY]
-        loss = 0
-        for j, file in enumerate(samples):
-            if j>0 and j%100 == 0:
-                print(f"Progress: {j} / {len(samples)} Next sample: {file} Bbox: {bbox.get(file, [0,0,0,0])} Loss: {loss}")
-                
-            ima_= cv2.imread(file_dir + '//' + file)
-            original_dimension = ima_.shape 
-            
-            x1, y1, x2, y2 = int(original_dimension[0]*0.05), int(original_dimension[1]*0.05), int(original_dimension[0]*0.95), int(original_dimension[1]*0.95)
-
-            x1, y1, x2, y2 = bbox.get(file, [x1, y1, x2, y2])
-
-            """ try:
-                augmented_image = augmentator(image=ima_, bboxes=[[x1,y1,x2,y2]], labels=[1])
-                x1, y1, x2, y2 = augmented_image["bboxes"][0]
-            except: """
-            augmented_image = {"image":ima_}
-
-            new_image = trans(augmented_image["image"])
-            new_dimension = new_image.shape
-
-            # bbox validation
-            x1, y1, x2, y2 = int(new_dimension[1]*x1/original_dimension[0]), int(new_dimension[2]*y1/original_dimension[1]), int(new_dimension[1]*x2/original_dimension[0]), int(new_dimension[2]*y2/original_dimension[1])
-            if x2<=x1 or y2<=y1:
-                print(f"Invalid box: {file}")
-                continue
-
-            # add to batch and send to gpu
-            ima.append(new_image.to(device))
-            
-            target.append({"boxes":torch.tensor(data=[[x1,y1,x2,y2]]).to(device), 
-                            "labels":torch.tensor(data=[1]).to(device)})
-            # max_batch_size = 8
-            if len(ima) == 8:
-                optimizer.zero_grad()
-                output = model(images = ima, targets = target) 
-                losses = output.get('bbox_regression', None)
-                
-                if losses is not None:
-                    loss = sum(loss for loss in output.values())
-                    if not torch.isnan(loss).any():
-                        loss.backward()
-                        optimizer.step()
-                ima = []
-                target = []
-        # residual
-        if len(ima) > 0:
-            optimizer.zero_grad()
-            output = model(images = ima, targets = target) 
-            losses = output.get('bbox_regression', None)
-            if losses is not None:
-                loss = sum(loss for loss in output.values())
-                if not torch.isnan(loss).any():
-                    loss.backward()
-                    optimizer.step()
-            ima = []
-            target = []
-        print(f"Progress: {j+1} / {len(samples)} Loss: {loss}")
+        train_epoch(path_to_annotations, file_dir, model, optimizer, device, augmentator)
+        
     model.to(old_device)
     model.eval()
     print(f"Training time: {time.time() - start_time}")

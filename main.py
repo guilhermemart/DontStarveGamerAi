@@ -45,7 +45,7 @@ if __name__ == '__main__':
     model = service.train(model, str(path.joinpath('person').absolute()), 0)
 
     # Treinar o model local para imagens heads
-    model_local = service.train(model_local, str(path.joinpath('head').absolute()), 200)
+    model_local = service.train(model_local, str(path.joinpath('head').absolute()), 20)
     
     # Capturar um print do monitor
     printScreen = ImageGrab.grab()
