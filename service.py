@@ -11,7 +11,7 @@ import os
 import albumentations as A
 import random
 
-LR = 0.00035
+LR = 0.000015
 SAMPLES_QUANTITY = 500
 
 # Definir as classes do modelo "COCO"
@@ -45,15 +45,13 @@ def transform(image : cv2.typing.MatLike):
     image = image.permute(2, 0, 1)
     # Normalizar a imagem
     image = image / 255.0
-    normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+    """ normalize = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406], 
                                                  std=[0.229, 0.224, 0.225])
     transform = torchvision.transforms.Compose([normalize])
 
-    image = transform(image)
+    image = transform(image) """
     
     # Adicionar uma dimensão de lote
-    #transformation = torchvision.transforms.ToTensor()
-    #image = transformation(image)
     image = image.unsqueeze(0)
     
     return image
@@ -93,6 +91,7 @@ def untransform_and_draw_boxes(tensor_image: torch.Tensor, boxes : tuple, labels
     return image, are_there_persons
 
 def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gmart//Projects//Ai//DontStarveGamerAi//data//person', epochs = 1):
+    start_time = time.time()
     old_device = model.parameters().__next__().device
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     if device != old_device:
@@ -121,9 +120,9 @@ def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gm
     model.train()
     
     # Define the optimizer
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=LR, momentum=0.9, nesterov=True)
-    
+    optimizer = torch.optim.SGD(model.parameters(), lr=LR, momentum=0.9, nesterov=True)
+    print(f"start training Learning Rate: {LR}")
+
     for j in range(epochs):
         print(f"Epoch: {j+1} / {epochs}")
         ima = []
@@ -137,19 +136,15 @@ def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gm
         samples = os.listdir(file_dir)
         random.shuffle(samples)
         samples = samples[0:SAMPLES_QUANTITY]
+        loss = 0
         for j, file in enumerate(samples):
-            if j%100 == 0:
-                print(f"Progress: {j} / {len(samples)} Next sample: {file} Bbox: {bbox.get(file, [0,0,0,0])}")
+            if j>0 and j%100 == 0:
+                print(f"Progress: {j} / {len(samples)} Next sample: {file} Bbox: {bbox.get(file, [0,0,0,0])} Loss: {loss}")
+                
             ima_= cv2.imread(file_dir + '//' + file)
             original_dimension = ima_.shape 
             
             x1, y1, x2, y2 = int(original_dimension[0]*0.05), int(original_dimension[1]*0.05), int(original_dimension[0]*0.95), int(original_dimension[1]*0.95)
-            
-            if file[0:8] == "anotated":
-                x1=int(file.split("-")[1])
-                y1=int(file.split("-")[2])
-                x2=int(file.split("-")[3])
-                y2=int(file.split("-")[4])
 
             x1, y1, x2, y2 = bbox.get(file, [x1, y1, x2, y2])
 
@@ -198,9 +193,10 @@ def train(model : torchvision.models.detection.ssd.SSD, file_dir ='C://Users//gm
                     optimizer.step()
             ima = []
             target = []
-        print(f"Loss: {loss}")
+        print(f"Progress: {j+1} / {len(samples)} Loss: {loss}")
     model.to(old_device)
     model.eval()
+    print(f"Training time: {time.time() - start_time}")
     return model
 
 if __name__ == '__main__':

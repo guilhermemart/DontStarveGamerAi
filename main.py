@@ -24,7 +24,8 @@ if __name__ == '__main__':
         model_local = torch.load('model_local.pt')
     else: 
         size = 600
-        model_local = torchvision.models.detection.ssd300_vgg16(weights=None,num_classes=2)
+        num_classes=2
+        model_local = torchvision.models.detection.ssd300_vgg16(weights="COCO_V1")
         # Retrieve the list of input channels. 
         in_channels = _utils.retrieve_out_channels(model_local.backbone, (size, size))
         # List containing number of anchors based on aspect ratios.
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     model = service.train(model, str(path.joinpath('person').absolute()), 0)
 
     # Treinar o model local para imagens heads
-    model_local = service.train(model_local, str(path.joinpath('head').absolute()), 25)
+    model_local = service.train(model_local, str(path.joinpath('head').absolute()), 200)
     
     # Capturar um print do monitor
     printScreen = ImageGrab.grab()
@@ -78,7 +79,7 @@ if __name__ == '__main__':
     
     print(f'Detections: {len(labels)}')
 
-    image_with_boxes, x = service.untransform_and_draw_boxes(image_tensor[0], boxes_local, labels_local, scores_local, threshold=0.25, save_as='head')
+    image_with_boxes, x = service.untransform_and_draw_boxes(image_tensor[0], boxes_local, labels_local, scores_local, threshold=0.1, save_as='head')
     print(f"Heads: {len(x)}")
 
     # salvar a imagem com as caixas delimitadoras
